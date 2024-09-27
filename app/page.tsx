@@ -81,6 +81,14 @@ export default function Home() {
       try {
         
         const {transaction} = await raydium.cpmm.createPool(payload);
+
+        const simulatedRes = await connection.simulateTransaction(transaction);
+
+        if(simulatedRes.value.err){
+          window.alert("Insufficient Balance or Creating the Same Token Pool Again");
+          return;
+        }
+        
         const txSig = await sendTransaction(transaction,connection);
         console.log(txSig);
 

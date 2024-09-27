@@ -17,9 +17,9 @@ export const Navbar = () => {
     const {wallet} = useWallet();
 
     return (
-        <div className="flex items-center justify-between px-8 py-3 w-screen border">
+        <div className="flex items-center justify-between px-8 py-3 w-screen">
 
-            <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
+            <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight">
                 Tuber
             </h1>
 

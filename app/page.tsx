@@ -3,16 +3,12 @@
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { ChangeEvent, useEffect, useState } from "react";
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { GetProgramAccountsFilter, PublicKey, Transaction } from "@solana/web3.js";
-import { CreateCpmmPoolParam, DEVNET_PROGRAM_ID, div, getCpmmPdaAmmConfigId, Raydium, TxVersion } from "@raydium-io/raydium-sdk-v2";
+import { CreateCpmmPoolParam, DEVNET_PROGRAM_ID, getCpmmPdaAmmConfigId, Raydium, TxVersion } from "@raydium-io/raydium-sdk-v2";
 import { txVersion } from "./config";
-
-interface UserMints{
-  mint: string;
-  balance: number;
-  programId: PublicKey;
-  decimals: number
-}
+import { TokenCard } from "@/components/TokenCard";
+import { UserMints } from "@/lib/types";
+import { PlusIcon } from "@/components/icons";
+import { ShimmerButton } from "@/components/ShimmerButton";
 
 export default function Home() {
 
@@ -148,11 +144,11 @@ export default function Home() {
     
   }
 
-  const handleMintChange = (e:ChangeEvent<HTMLSelectElement>, mintChange:"mintA"|"mintB") => {
+  const handleMintChange = (e:ChangeEvent<HTMLSelectElement>, mintChange:"base"|"quote") => {
     const selectedOption = userMints.find((m)=>m.mint === e.target.value) || null;
 
     if(selectedOption){
-      if(mintChange === "mintA"){
+      if(mintChange === "base"){
         setMintA(selectedOption);
       }
       else{
@@ -161,100 +157,48 @@ export default function Home() {
     }
   }
 
-
   return (
-    <div className="flex flex-col items-center justify-center p-10">
-      
-      <div className="flex gap-x-[100px]">
+      <div className="flex flex-col items-center max-w-screen-2xl mx-auto py-5 ">
 
-        {/* MINT A */}
+        <h2 className="scroll-m-20 pb-2 text-3xl font-semibold tracking-tight transition-colors first:mt-0">
+            Create Liquidity Pool
+        </h2>
 
-        <div className="flex flex-col items-center gap-y-3 border min-w-[300px]">
+        <p className="leading-7 font-medium text-gray-600 mb-10">
+          Powered by Raydium V3
+        </p>
+        
+        <div className="relative mb-6">
 
-            <div>Select Base Token</div>
+          <TokenCard 
+            type="base"
+            userMints={userMints.filter((m) => m.mint !== mintB?.mint)} 
+            mint={mintA}
+            onLiquidityChange={(e)=>{
+              setMintALiquid(Number(e.target.value))
+            }}
+            liquidity={mintAliquid}
+            onMintchange={handleMintChange}
+          />
 
+          <TokenCard 
+            type="quote"
+            userMints={userMints.filter((m) => m.mint !== mintA?.mint)} 
+            mint={mintB}
+            onLiquidityChange={(e)=>{
+              setMintBLiquid(Number(e.target.value))
+            }}
+            liquidity={mintBliquid}
+            onMintchange={handleMintChange}
+          />
 
-            <select className="w-full text-center" value={mintA?.mint} onChange={(e)=>handleMintChange(e,"mintA")}>
-
-              {
-                userMints.filter((m) => m.mint !== mintB?.mint).map(val => (
-
-                  <option key={val.mint} value={val.mint}>
-                    {val.mint}
-                  </option>
-                )) 
-              }
-              {userMints.length === 0 && <option className="w-full" value={"NO TOKEN"}>NO TOKEN</option>}
-            </select>
-
-            <div>{`TOKEN BALANCE : ${mintA?.balance || 0}`}</div>
-
-            <input type="number" className="text-center" value={mintAliquid} onChange={(e)=>setMintALiquid(Number(e.target.value))} />
-
+          <PlusIcon className="absolute top-[170px] left-[180px] h-10 w-10"/>
         </div>
 
-        {/* MINT B */}
-
-        <div className="flex flex-col items-center gap-y-3 border min-w-[300px]">
-
-            <div>Select Quote Token</div>
-
-            <select value={mintB?.mint} onChange={(e)=>handleMintChange(e,"mintB")} className="w-full text-center">
-              {
-                userMints.filter((m) => m.mint !== mintA?.mint).map(val => (
-
-                  <option key={val.mint} value={val.mint}>
-                    {val.mint}
-                  </option>
-                )) 
-              }
-              {userMints.length === 0 && <option className="w-full" value={"NO TOKEN"}>NO TOKEN</option>}
-            </select>
-
-            <div>{`TOKEN BALANCE : ${mintB?.balance || 0}`}</div>
-
-            <input type="number" className="text-center" value={mintBliquid} onChange={(e)=>setMintBLiquid(Number(e.target.value))} />
-
-        </div>  
+        <ShimmerButton onClick={addLiquidity}>
+          Add Liquidity
+        </ShimmerButton>
 
       </div>
-
-      <button onClick={addLiquidity} className="mx-auto px-2 py-1 text-white bg-black rounded-xl font-semibold my-8">
-          Create Liquidity Pool
-      </button>
-
-    </div>
-  );
+  )
 }
-
-/*
-  {
-            "account": {
-                "data": {
-                    "parsed": {
-                        "info": {
-                            "isNative": false,
-                            "mint": "6vQNLKKh4mdTj4QNFWSjYNHDQJ1wALgs2hbY3CqJ9enF",
-                            "owner": "GZuCVbPM1xDMjdtPxri3zmbusVpDtnUaDksyZ3mqsA9H",
-                            "state": "initialized",
-                            "tokenAmount": {
-                                "amount": "100500",
-                                "decimals": 2,
-                                "uiAmount": 1005.0,
-                                "uiAmountString": "1005"
-                            }
-                        },
-                        "type": "account"
-                    },
-                    "program": "spl-token",
-                    "space": 165
-                },
-                "executable": false,
-                "lamports": 2039280,
-                "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-                "rentEpoch": 18446744073709551615,
-                "space": 165
-            },
-            "pubkey": "A9FVFjhBMxzyizjR9JSy8Vm15eBevrkecoi7gXRbiuHG"
-        },
-*/

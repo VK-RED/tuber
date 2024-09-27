@@ -1,64 +1,93 @@
 "use client";
 
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { useEffect, useState } from "react";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { GetProgramAccountsFilter, Transaction } from "@solana/web3.js";
-import { DEVNET_PROGRAM_ID, getCpmmPdaAmmConfigId, Raydium } from "@raydium-io/raydium-sdk-v2";
+import { ChangeEvent, useEffect, useState } from "react";
+import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { GetProgramAccountsFilter, PublicKey, Transaction } from "@solana/web3.js";
+import { CreateCpmmPoolParam, DEVNET_PROGRAM_ID, div, getCpmmPdaAmmConfigId, Raydium, TxVersion } from "@raydium-io/raydium-sdk-v2";
 import { txVersion } from "./config";
 
-
+interface UserMints{
+  mint: string;
+  balance: number;
+  programId: PublicKey;
+  decimals: number
+}
 
 export default function Home() {
 
-  const {publicKey,sendTransaction,signTransaction,signAllTransactions} = useWallet();
+  const {publicKey,signTransaction,sendTransaction} = useWallet();
   const {connection} = useConnection();
-  const [mintsAndBalance,setMintsAndBalance] = useState<{mint:string,balance:number}[]>();
-  const [inputMint,setInputMint] = useState<{mint:string,balance:number}>()
-  const [outputMint,setOutputMint] = useState<{mint:string,balance:number}>()
+
+  const [userMints,setUserMints] = useState<UserMints[]>([]);
   
-  const [inputAmount,setInputAmount] = useState(0);
-  const [outputAmount,setOutputAmount] = useState(0);
+  const [mintA,setMintA] = useState<UserMints>()
+  const [mintB,setMintB] = useState<UserMints>()
+  
+  const [mintAliquid,setMintALiquid] = useState(0);
+  const [mintBliquid,setMintBLiquid] = useState(0);
+
+  useEffect(()=>{
+    getAllTokenAccounts();
+  },[publicKey])
 
   const addLiquidity = async() => {
 
-    if(publicKey && inputMint && outputMint && signTransaction){
+    if(mintAliquid === 0 || mintBliquid === 0){
+      window.alert("The liquidity can't be 0");
+      return;
+    }
+
+    if(publicKey && mintA && mintB && signTransaction){
+
       const raydium = await Raydium.load({connection,cluster:"devnet",owner:publicKey});
 
-      const mintA = await raydium.token.getTokenInfo(inputMint.mint)
+      const mint1 = {
+        address: mintA.mint,
+        decimals: mintA.decimals,
+        programId: mintA.programId.toBase58(),
+      }
       
-      const mintB = await raydium.token.getTokenInfo(outputMint.mint)
-
-      console.log(mintA);
-      console.log(mintB);
+      const mint2 = {
+        address: mintB.mint,
+        decimals: mintB.decimals,
+        programId: mintB.programId.toBase58(),
+      }
 
       const feeConfigs = await raydium.api.getCpmmConfigs()
 
       if (raydium.cluster === 'devnet') {
+
         feeConfigs.forEach((config) => {
           config.id = getCpmmPdaAmmConfigId(DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM, config.index).publicKey.toBase58()
         })
       }
-      try {
-        const { builder,execute,transaction} = await raydium.cpmm.createPool({
-          programId:DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,
-          poolFeeAccount:DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_FEE_ACC,
-          mintA,
-          mintB,
-          mintAAmount:inputAmount,
-          mintBAmount:outputAmount,
-          feeConfig:feeConfigs[0],
-          ownerInfo:{ 
-            useSOLBalance:true,
-          },
-          txVersion:txVersion,
-          startTime: 0,
-          associatedOnly:false,
-        });
-        
-        await sendTransaction(transaction,connection);
 
+      const payload : CreateCpmmPoolParam<TxVersion.V0> = {
+        // CHANGE THIS ON MAINNET
+        programId:DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,
+        poolFeeAccount:DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_FEE_ACC,
+
+        mintA:mint1,
+        mintB:mint2,
+        mintAAmount:mintAliquid * (10 ** mintA.decimals),
+        mintBAmount:mintBliquid * (10 ** mintB.decimals),
+        feeConfig:feeConfigs[0],
+        ownerInfo:{ 
+          useSOLBalance:true,
+        },
+        txVersion:txVersion,
+        startTime: 0,
+        associatedOnly:false,
+      }
+      
+
+      try {
         
+        const {transaction} = await raydium.cpmm.createPool(payload);
+        const txSig = await sendTransaction(transaction,connection);
+        console.log(txSig);
+
       } catch (error) {
         console.log(error);
       }
@@ -68,121 +97,131 @@ export default function Home() {
   }
 
   const getAllTokenAccounts = async () => {
-    if(publicKey){
 
-      const filters: GetProgramAccountsFilter[] = [
-        {dataSize:165},
-        {
-          memcmp: {
-            offset:32,
-            bytes:publicKey.toBase58(),
-          }
-        }
-      ]
+    if(!publicKey){
+      console.log("No Public Key found !");
+      return;
+    }
 
-      const accounts = await connection.getParsedProgramAccounts(TOKEN_PROGRAM_ID,{filters});
-      // console.log(accounts);
-      const filteredMintAndBalance = accounts.map((account)=>{
-        const parsedInfo = account.account.data;
 
-        //@ts-ignore
-        const mint:string = parsedInfo["parsed"]["info"]["mint"];
-        //@ts-ignore
-        const balance:number = parsedInfo["parsed"]["info"]["tokenAmount"]["uiAmount"];
+    // TOKEN 2022 PROGRAM
+    const res1 = await connection.getParsedTokenAccountsByOwner(publicKey,{programId:TOKEN_2022_PROGRAM_ID});
+    // LEGACY TOKEN PROGRAM
+    const res2 = await connection.getParsedTokenAccountsByOwner(publicKey,{programId:TOKEN_PROGRAM_ID});
 
-        return {mint,balance};
-      })
+    const arr1 = res1.value.map((data)=>{
 
-      setMintsAndBalance(filteredMintAndBalance);
-      console.log(accounts);
-      return accounts;
+      const info = data.account.data.parsed["info"];
+      const mint:string =  info.mint;
+      const balance = Number(info.tokenAmount.uiAmountString);
+      const programId = data.account.owner;
+      const decimals:number = info.tokenAmount.decimals;
 
+      return {mint,balance,programId, decimals};
+
+    });
+
+    const arr2 = res2.value.map((data)=>{
+
+      const info = data.account.data.parsed["info"];
+      const mint:string =  info.mint;
+      const balance = Number(info.tokenAmount.uiAmountString);
+      const programId = data.account.owner;
+      const decimals:number = info.tokenAmount.decimals;
+
+      return {mint,balance,programId, decimals};
+
+    });
+
+    const arr = [...arr1, ...arr2];
+    console.log(arr);
+    
+    setUserMints([...arr1, ...arr2]);
+
+    if(arr.length > 1){
+      const mint1 = arr[0];
+      const mint2 = arr1[1];
+
+      setMintA(mint1);
+      setMintB(mint2);
+    }
+    
+  }
+
+  const handleMintChange = (e:ChangeEvent<HTMLSelectElement>, mintChange:"mintA"|"mintB") => {
+    const selectedOption = userMints.find((m)=>m.mint === e.target.value) || null;
+
+    if(selectedOption){
+      if(mintChange === "mintA"){
+        setMintA(selectedOption);
+      }
+      else{
+        setMintB(selectedOption);
+      }
     }
   }
 
-  
-
-  useEffect(()=>{
-    getAllTokenAccounts();
-  },[publicKey])
 
   return (
-    <div>
-      Home Page
+    <div className="flex flex-col items-center justify-center p-10">
       
-      <div className="flex flex-col my-8 max-w-sm">
-        <div>
-          Select MINT A
-        </div>
+      <div className="flex gap-x-[100px]">
 
-        <div className="flex gap-x-4 items-center">
-          <select className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" onChange={(e)=>{
-                const selectedMint = mintsAndBalance?.filter((x) => x.mint === e.target.value)?.[0];
-                if(selectedMint){
-                  setInputMint(selectedMint)
-                }
+        {/* MINT A */}
 
-              }}>
+        <div className="flex flex-col items-center gap-y-3 border min-w-[300px]">
+
+            <div>Select Base Token</div>
+
+
+            <select className="w-full text-center" value={mintA?.mint} onChange={(e)=>handleMintChange(e,"mintA")}>
+
               {
-                mintsAndBalance?.map((item)=>(
-                  <option key={item.mint} value={item.mint}>
-                    {item.mint}
+                userMints.filter((m) => m.mint !== mintB?.mint).map(val => (
+
+                  <option key={val.mint} value={val.mint}>
+                    {val.mint}
                   </option>
-                ))
+                )) 
               }
+              {userMints.length === 0 && <option className="w-full" value={"NO TOKEN"}>NO TOKEN</option>}
             </select>
 
-            <div>
-              {inputMint && inputMint.balance}
-            </div>
+            <div>{`TOKEN BALANCE : ${mintA?.balance || 0}`}</div>
 
-            <input className="border-2" value={inputAmount} onChange={(e)=>setInputAmount(Number(e.target.value))} />
+            <input type="number" className="text-center" value={mintAliquid} onChange={(e)=>setMintALiquid(Number(e.target.value))} />
+
         </div>
 
-        
-      </div>
+        {/* MINT B */}
 
-      <div className="flex flex-col my-8 max-w-sm">
-        <div>
-          Select MINT B
-        </div>
+        <div className="flex flex-col items-center gap-y-3 border min-w-[300px]">
 
-        <div className="flex gap-x-4 items-center">
-          <select className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" onChange={(e)=>{
-                const selectedMint = mintsAndBalance?.filter((x) => x.mint === e.target.value)?.[0];
-                if(selectedMint){
-                  setOutputMint(selectedMint)
-                }
+            <div>Select Quote Token</div>
 
-              }}>
+            <select value={mintB?.mint} onChange={(e)=>handleMintChange(e,"mintB")} className="w-full text-center">
               {
-                mintsAndBalance?.map((item)=>(
-                  <option key={item.mint} value={item.mint}>
-                    {item.mint}
+                userMints.filter((m) => m.mint !== mintA?.mint).map(val => (
+
+                  <option key={val.mint} value={val.mint}>
+                    {val.mint}
                   </option>
-                ))
+                )) 
               }
+              {userMints.length === 0 && <option className="w-full" value={"NO TOKEN"}>NO TOKEN</option>}
             </select>
 
-            <div>
-              {outputMint && outputMint.balance}
-            </div>
+            <div>{`TOKEN BALANCE : ${mintB?.balance || 0}`}</div>
 
-            <input className="border-2" value={outputAmount} onChange={(e)=>setOutputAmount(Number(e.target.value))} />
-        </div>
+            <input type="number" className="text-center" value={mintBliquid} onChange={(e)=>setMintBLiquid(Number(e.target.value))} />
 
-        
+        </div>  
+
       </div>
 
-      <div>
-        <button onClick={addLiquidity} 
-          className="px-2 py-1 bg-black text-white rounded-xl font-semibold">
-          Add Liquidity
-        </button>
-      </div>
-
-      
-
+      <button onClick={addLiquidity} className="mx-auto px-2 py-1 text-white bg-black rounded-xl font-semibold my-8">
+          Create Liquidity Pool
+      </button>
 
     </div>
   );
